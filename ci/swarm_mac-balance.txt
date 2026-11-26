@@ -1,0 +1,6 @@
+# v0.2.55g swarm job 5 (Mac): the balance bot, long headless runs per species (numbers only; it never changes balance)
+bot:harrow:thresher:20:h
+bot:harrow:base:20:h
+bot:ironclad:rampart:20:h
+bot:ironclad:buster:20:h
+bot:deepworm:base:20:h

@@ -1,0 +1,6 @@
+# v0.2.55g swarm job 1 (Linux): the Harrow bot. bot:<species>:<variant>:<game minutes>, then scripted Harrow checks
+bot:harrow:base:5
+bot:harrow:puppeteer:5
+bot:harrow:thresher:5
+hwave
+hpack

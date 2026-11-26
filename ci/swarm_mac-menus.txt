@@ -1,0 +1,6 @@
+# v0.2.55g swarm job 4 (Mac): menus + cross-species (title, Settings, REPORT A PROBLEM, peek, pause + level-up after every species pair);
+# its shots are compared with the last swarm run's in the Opus report
+settings
+report
+peek:ironclad:base
+xpause

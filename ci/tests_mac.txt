@@ -1,0 +1,12 @@
+settings
+imenuperf:ironclad:base
+imenuperf:harrow:base
+imenuperf:deepworm:base
+report
+peek:ironclad:base
+xgen
+setbottom
+ipace
+cfgsave
+lpause:ironclad:rampart
+lpause:deepworm:base

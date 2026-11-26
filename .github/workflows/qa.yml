@@ -1,0 +1,64 @@
+name: qa
+# Encrypted test builds only. The build is decrypted inside the runner, tested, and every output is encrypted again before upload.
+# The public log shows test names and PASS / FAIL only.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: qa
+  cancel-in-progress: true
+jobs:
+  test:
+    # v0.2.55g a swarm build (tools/qa_push.sh with SF_SWARM=1) runs the swarm workflow only
+    if: github.event_name == 'workflow_dispatch' || !startsWith(github.event.head_commit.message, 'swarm build')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            tag: linux
+          - os: macos-15
+            tag: mac
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check secrets
+        env:
+          K: ${{ secrets.SEEDFALL_KEY }}
+          P: ${{ secrets.SEEDFALL_PRIVATE_TOKEN }}
+        run: |
+          [ -n "$K" ] || { echo "SEEDFALL_KEY secret is missing"; exit 1; }
+          [ -n "$P" ] || echo "SEEDFALL_PRIVATE_TOKEN secret is missing (results will only be uploaded encrypted)"
+      - name: Runner setup
+        run: bash ci/setup.sh ${{ matrix.tag }}
+      - name: Decrypt build
+        env:
+          SEEDFALL_KEY: ${{ secrets.SEEDFALL_KEY }}
+        run: bash ci/decrypt_build.sh ${{ matrix.tag }}
+      - name: Run tests
+        run: bash ci/run_tests.sh ${{ matrix.tag }}
+      - name: Encrypt results
+        if: always()
+        run: bash ci/encrypt_results.sh ${{ matrix.tag }}
+      - name: Upload encrypted results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seedfall-results-${{ matrix.tag }}-${{ github.run_number }}
+          path: results-${{ matrix.tag }}.p7m
+          retention-days: 1
+          if-no-files-found: ignore
+      - name: Copy results to the private repo
+        if: always()
+        env:
+          SEEDFALL_PRIVATE_TOKEN: ${{ secrets.SEEDFALL_PRIVATE_TOKEN }}
+        run: bash ci/push_private.sh ${{ matrix.tag }} ${{ github.run_number }}
+      - name: Wipe
+        if: always()
+        run: rm -rf work out results-*.p7m results-*.tgz
+      - name: Result
+        run: bash ci/status.sh

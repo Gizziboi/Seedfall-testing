@@ -1,0 +1,101 @@
+name: swarm
+# v0.2.55g BOT SWARM (owner's pick A, 2026-11-24): 3 Linux + 2 Mac runners, one specialised bot each. The in-game bot playtester plays
+# the encrypted test build (it drives the inputs and picks cards); at the end ONE Opus call reads the five jobs' results and writes a bug +
+# balance-numbers report to the PRIVATE repo (test-results: swarm/runs/<run>-report/report.md, running monthly total in swarm/SPEND.md).
+# Bots are for bug testing and balance only, never the game's vision. Hard cap: $50 of Opus a month (ci/swarm_report.py); the swarm
+# doesn't start once the month is at the cap. The public log shows job names + PASS / FAIL + "REPORT ok / skipped" only.
+# Started by tools/qa_push.sh with SF_SWARM=1 (commit message "swarm build ...") or by hand (Actions > swarm > Run workflow).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: swarm
+  cancel-in-progress: true
+jobs:
+  cap:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.head_commit.message, 'swarm build')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      ok: ${{ steps.c.outputs.ok }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Monthly cap
+        id: c
+        env:
+          SEEDFALL_RESULTS_KEY: ${{ secrets.SEEDFALL_RESULTS_KEY }}
+          SEEDFALL_PRIVATE_TOKEN: ${{ secrets.SEEDFALL_PRIVATE_TOKEN }}
+        run: |
+          . ci/private_git.sh
+          if pg_setup; then pg_clone "$RUNNER_TEMP/res"; pg_done; else mkdir -p "$RUNNER_TEMP/res"; fi
+          if python3 ci/swarm_report.py check "$RUNNER_TEMP/res"; then echo "ok=1" >> "$GITHUB_OUTPUT"; else echo "ok=0" >> "$GITHUB_OUTPUT"; fi
+          rm -rf "$RUNNER_TEMP/res"
+  bots:
+    needs: cap
+    if: needs.cap.outputs.ok == '1'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: ubuntu-24.04, tag: linux, job: linux-harrow}
+          - {os: ubuntu-24.04, tag: linux, job: linux-deepworm}
+          - {os: ubuntu-24.04, tag: linux, job: linux-ironclad}
+          - {os: macos-15, tag: mac, job: mac-menus}
+          - {os: macos-15, tag: mac, job: mac-balance}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - name: Runner setup
+        run: bash ci/setup.sh ${{ matrix.tag }}
+      - name: Decrypt build
+        env:
+          SEEDFALL_KEY: ${{ secrets.SEEDFALL_KEY }}
+        run: bash ci/decrypt_build.sh ${{ matrix.tag }}
+      - name: Bot
+        env:
+          SF_LIST: ci/swarm_${{ matrix.job }}.txt
+          SF_SEED: ${{ github.run_number }}
+        run: bash ci/run_tests.sh ${{ matrix.tag }}
+      - name: Copy results to the private repo
+        if: always()
+        env:
+          SEEDFALL_RESULTS_KEY: ${{ secrets.SEEDFALL_RESULTS_KEY }}
+          SEEDFALL_PRIVATE_TOKEN: ${{ secrets.SEEDFALL_PRIVATE_TOKEN }}
+        run: bash ci/push_private.sh ${{ matrix.job }} ${{ github.run_number }} swarm/runs
+      - name: Wipe
+        if: always()
+        run: rm -rf work out results-*.p7m results-*.tgz
+      - name: Result
+        run: bash ci/status.sh
+  report:
+    needs: [cap, bots]
+    if: always() && needs.cap.outputs.ok == '1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Opus report (capped)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SEEDFALL_RESULTS_KEY: ${{ secrets.SEEDFALL_RESULTS_KEY }}
+          SEEDFALL_PRIVATE_TOKEN: ${{ secrets.SEEDFALL_PRIVATE_TOKEN }}
+        run: |
+          python3 -m pip install -q --break-system-packages pillow >/dev/null 2>&1 || python3 -m pip install -q pillow >/dev/null 2>&1 || true
+          . ci/private_git.sh
+          pg_setup || { echo "REPORT skipped: no private repo access"; exit 0; }
+          # ONE Opus call; if the push races another job, re-clone and re-apply the saved record (never a second call)
+          pg_clone "$RUNNER_TEMP/res"
+          python3 ci/swarm_report.py report "$RUNNER_TEMP/res" ${{ github.run_number }} "$RUNNER_TEMP/rec.json" || true
+          for i in 1 2 3 4 5; do
+            pg_push "$RUNNER_TEMP/res" "swarm report ${{ github.run_number }}" && break
+            sleep $((i * 6))
+            pg_clone "$RUNNER_TEMP/res"
+            python3 ci/swarm_report.py apply "$RUNNER_TEMP/res" "$RUNNER_TEMP/rec.json" || true
+          done
+          rm -f "$RUNNER_TEMP/rec.json"
+          pg_done
+          rm -rf "$RUNNER_TEMP/res"

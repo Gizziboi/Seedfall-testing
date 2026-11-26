@@ -1,0 +1,4 @@
+# v0.2.55g swarm job 2 (Linux): the Deepworm bot (burrow / surface, level-ups, death) + scripted worm HUD checks
+bot:deepworm:base:8
+wintro
+whud

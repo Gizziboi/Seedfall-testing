@@ -1,0 +1,8 @@
+# v0.2.55g swarm job 3 (Linux): the Ironclad bot per variant + crate intro, formations, welds
+bot:ironclad:base:5
+bot:ironclad:rampart:5
+bot:ironclad:buster:5
+icrate
+iform
+ilevel
+iweld
